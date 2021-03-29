@@ -1,0 +1,234 @@
+<!doctype html>
+
+
+<html>
+  <head>
+    <meta charset='utf-8'>
+    <meta name='viewport' content='width=device-width', initial-scale=1, user-scalable=no'>
+    <meta name='mobile-web-app-capable' content='yes'>
+    <meta name='apple-mobile-web-app-capable' content='yes'>
+    <link rel='icon' type='image/png' sizes='32x32' href='favicon-32x32.png'>
+    <link rel='icon' type='image/png' sizes='96x96' href='favicon-96x96.png'>
+    <link rel='stylesheet' href='css/common.css'>
+
+	<title>Ayanna Howard AR Experience</title>
+      </head>
+	<body>
+          <header>
+	    <details open>
+		<summary>Ayanna Howard AR Expérience</summary>
+		  <p>
+		    Take the time to find a nice open space outside. Pull your phone out and begin this AR experience. The experience will work best in open outdoor areas.
+		     <a class="back" href="./">Back</a>
+		  </p>
+            </details>
+	   </header>
+	   <script type="module">
+		import {WebXRButton} from './js/util/webxr-button.js';
+		import {Scene} from './js/render/scenes/scene.js';
+		import {Renderer}, createWebGLContext} from './js/render/core/renderer.js';
+		import {Node} from './js/render/core/node.js';
+		import {Gltf2Node} from './js/render/nodes/gltf2.js';
+		import {DropShadowNode} from './js/render/nodes/drop-shadow.js';
+		import {vec3} from './js/render/math/gl-matrix.js';
+		import {Ray} from './js/render/math/ray.js';
+
+		//XR Globals
+		let xrButton = null;
+		let xrRefSpace = null;
+		let xrViewerSpace = null;
+		let xrHitTestSource = null;
+
+		//WebGL scene globals
+		let gl = null; 
+		let renderer = null;
+		let scene = new Scene();
+		scene.enableStats(false);
+		
+
+		let arObject = new Node();
+		arObject.visible = false; 
+		scene.addNode(arObject);		
+		
+
+		//This will be the Ayanna gallery gltf 		
+		
+		let ayannaGallery = new Gltf2Node({url: 'models/gltf/ayannahoward/ayannaHowardCurveGalleryV3.gltf'});
+		arObject.addNode(ayannaGallery)
+		
+		//Will start with their reticle, but it seems like I could
+		//Make it say their name with the logo ooo that'd be hard 
+		
+		let reticle = new Gltf2Node({url: 'models/gltf/ayannahoward/		ayannaretical.gltf'});
+
+		reticle.visible = false;
+		scene.addNode(reticle);
+		
+
+		//Adding the drop shadow makes it more immersive
+		let shadow = new DropShadowNode();
+		vec3.set(shadow.scale, 0.15, 0.15, 0.15);
+		arObject.addNode(shadow);
+		
+
+		//The cool thing is that we can add multiple galleries
+		//But for the purpose of this project we're only going to add one
+
+		const MAX_GALLERIES = 1;
+		let galleries = [];
+			
+		//Need to make the background transparent for AR.
+		//If this were VR could make the the background anything
+		scene.clear = false;
+		
+		function initXR() {
+		//Initial Button they will see when loading into the screen
+		xrButton = new WebXRButton({
+		  onRequestSession: onRequestSession,
+		  onEndSession: onEndSession,
+		  textEnterXRTitle: "Start AR",
+		  textXRNotFoundTitle: "AR Not Available",
+		  textExitXRTitle: "End AR session",
+		  });
+
+		  document.querySelector('header').appendChild(xrButton.domElement);
+		  //Conditional indicating whether or not AR is supported on device
+		  if (navigator.xr) {
+			navigator.xr.isSessionSupported('immersive-ar')
+						.then((supported) => {
+                           
+                            xrButton.enabled = supported;
+                              });
+                 
+		  }	 					
+			
+		}
+
+		function onRequestSession() {
+                	return navigator.xr.requestSession('immersive-ar', {requiredFeatures: ['local', 'hit-test']})
+	.then((session) => {
+		xrButton.setSession(session);
+		onSessionStarted(session);	
+		});
+
+		}
+
+		function onSessionStarted(session) {
+		  session.addEventListener('end', onSessionEnded);
+	          session.addEventListener('select', onSelect);
+		  
+		  if(!gl) {
+			gl = createWebGLContext({
+			
+		           xrCompatible: true 
+			});
+
+			render = new Renderer(gl);
+			
+			
+			scene.setRenderer(renderer)
+
+			}
+			
+			session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl) });
+			//Will be casting a ray straight from the viewer's
+			//position and render our reticle as it intersects with
+			//real world surface. Will achieve this by leveraging the 
+			//hittestApi
+		        session.requestReferenceSpace('viewer').then((refspace) => 				{  xrViewerSpace = refspace;           
+					
+				   session.requestHitTestSource({ space: xrViewerSpace }).then((hitTestSource) => {
+
+		xrHitTestSource = hitTestSource;
+
+			});					
+		});
+
+		session.requestReferenceSpace('local').then((refSpace) => {
+			xRefSpace = refSpace;
+			
+			session.requestAnimationFrame(onXRFrame);
+
+			});		
+	
+		}
+		
+		//Cancel sesión once the end Button has been tapped
+		function onEndSession(session) {
+			
+		   xrHitTestSource.cancel();
+		   xrHitTestSource = null;
+		   session.end();
+	
+		}
+		
+		function onSessionEnd(event) {
+		 xrButton.setSession(null);	
+		}
+
+		function addARObjectAt(matrix) {
+			
+		  let newayannaGallery = arObject.clone();
+	          newayannaGallery.visible = true;
+	          newayannaGallery.matrix = matrix;
+		  scene.addNode(newayannaGallery);
+		  
+
+		  galleries.push(newayannaGallery)
+
+		//to ensure there aren't too may galleries in the scene
+
+		  if(galleries.length > MAX_GALLERIES) {
+			let oldGallery = galleries.shift();
+			scene.removeNode(oldFlower)
+;		    }
+		    
+				
+		}
+
+		//Whenever we need to draw a new frame
+
+		function cnXRFrame(t, frame) {
+			let session = frame.session;
+			let pose = frame.getViewerPose(xrRefSpace);
+			
+
+
+			reticle.visible = false;
+
+			if (xrHitTestSource && pose) {
+				
+		        let hitTestResults = frame.getHitTestResults(xrHitTestSource);
+			if (hitTestResults.length > 0) {
+
+			let pose = hitTestResults[0].getPose(xrRefSpace);
+			reticle.visible = true;
+			reticle.matrix = pose.transform.matrix;
+
+			   }
+			}
+			
+		  scence.startFrame();
+		  
+
+		  session.requestAnimationFrame(onXRFrame);
+		  
+
+		  scene.drawXRFrame(frame, pose);
+
+		  scene.endFrame();
+
+
+
+		}
+
+		initXR();
+
+               </script>
+	    </body>
+
+ </html>	
+		
+		
+
+		
